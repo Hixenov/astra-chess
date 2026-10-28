@@ -1,17 +1,18 @@
-# Astra Chess 0.2
+# Astra Chess 0.3
 
-An educational C++17 UCI chess engine using a 0x88 mailbox board.
+Astra Chess is a C++17 chess engine project with a UCI interface. Version 0.3 is a stronger search prototype, not a verified 2500-Elo engine.
 
-## Features in v0.2
+## What's new in v0.3
 
-- Legal move generation, including castling, en passant and promotions.
-- UCI commands: `uci`, `isready`, `ucinewgame`, `position`, `go depth N`, `stop`, `quit`.
-- Negamax alpha-beta search with iterative deepening.
-- Quiescence search to reduce horizon effects around captures.
-- Deterministic Zobrist hashing and a transposition table.
-- Basic material/positional evaluation and capture/promotion ordering.
-- Perft mode for move-generation testing.
-- Fifty-move counter draw handling in search.
+- Iterative deepening and negamax alpha-beta search with transposition table.
+- Principal-variation search and conservative late-move reductions.
+- Killer-move and history-heuristic ordering for quiet moves.
+- Quiescence search, capture/promotion ordering, and mate-distance score storage.
+- Basic positional evaluation: material, piece activity/centralization, pawn advancement, doubled/isolated pawns, bishop pair, seventh-rank rooks and king pawn shelter.
+- UCI search runs asynchronously, so `stop` and `quit` can interrupt it.
+- Time management for `go movetime`, `wtime`, `btime`, `winc`, `binc`, and `movestogo`.
+- Basic threefold-repetition path detection and fifty-move counter handling in search.
+- Perft commands for move-generation regression tests.
 
 ## Build (Arch Linux)
 
@@ -21,27 +22,23 @@ make
 make test
 ```
 
-## Run
+## Use with a UCI chess GUI
 
-```bash
-./astra
-```
-
-Then send UCI commands:
+Select the compiled `astra` executable as the engine. From a terminal:
 
 ```text
 uci
 isready
 position startpos
-go depth 4
+go depth 8
+stop
 quit
 ```
 
-Set up a position from FEN and apply moves:
+Time controls are accepted, for example:
 
 ```text
-position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5
-go depth 4
+go wtime 300000 btime 300000 winc 2000 binc 2000
 ```
 
 ## Tests
@@ -54,10 +51,26 @@ go depth 4
 make test
 ```
 
-## Known limitations
+For a FEN position:
 
-- Search is synchronous; `stop` cannot interrupt an active search yet.
-- `go` supports depth limits only, not clocks or node limits.
-- The Hash UCI option and configurable TT sizing are not implemented yet.
-- Repetition detection and complete draw adjudication are not implemented.
-- Evaluation is intentionally basic; this is a learning engine, not a Stockfish-strength engine.
+```bash
+./astra --perft-fen 3 'FEN GOES HERE'
+./astra --list-fen 'FEN GOES HERE'
+```
+
+## Important limitations
+
+- **2500 Elo has not been demonstrated.** No strength rating is claimed until Astra is tested in controlled engine matches against rated opponents.
+- The board uses a 0x88 mailbox rather than bitboards; legal move generation is not yet optimized for high performance.
+- Evaluation is hand-written and basic; no trained NNUE network is included.
+- Search is still missing several established techniques, including null-move pruning, aspiration windows, robust SEE, tablebases, and advanced draw handling.
+- Hash size is fixed in this build. Repetition detection is a search-path approximation, not a complete tournament-grade repetition implementation.
+- Tests cover start-position perft and UCI smoke checks; special-position perft and tactical suites are still needed.
+
+## Roadmap toward serious playing strength
+
+1. Verify move generation against a broad perft suite and differential testing.
+2. Add null-move pruning, aspiration windows, SEE and more advanced pruning with regression tests.
+3. Replace the mailbox move generator with bitboards and incremental position/hash updates.
+4. Integrate or train an NNUE evaluator and tune search parameters with self-play.
+5. Run thousands of games against known engines and estimate Elo with confidence intervals.
