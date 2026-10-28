@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 #include <iostream>
 #include <string>
 
@@ -5,6 +7,7 @@
 #include "movegen.h"
 #include "position.h"
 #include "tests.h"
+#include "tune.h"
 #include "uci.h"
 #include "version.h"
 
@@ -46,6 +49,14 @@ int main(int argc, char** argv) {
             std::cout << "perft(" << depth << ") = " << perft(pos, depth) << "\n";
         }
         return 0;
+    }
+    if (a1 == "--datagen") {
+        if (argc < 6) { std::cerr << "usage: astra --datagen <games> <depth> <seed> <outfile>\n"; return 2; }
+        return runDatagen(std::stoi(argv[2]), std::stoi(argv[3]), std::stoull(argv[4]), argv[5]);
+    }
+    if (a1 == "--tune") {
+        if (argc < 3) { std::cerr << "usage: astra --tune <datafile> [iterations=30] [paramfile=tuned_params.txt]\n"; return 2; }
+        return runTune(argv[2], argc > 3 ? std::stoi(argv[3]) : 30, argc > 4 ? argv[4] : "tuned_params.txt");
     }
     if (a1 == "--gen-test-net") {
         if (argc < 3) { std::cerr << "usage: astra --gen-test-net <file> [hidden=32] [seed=1]\n"; return 2; }

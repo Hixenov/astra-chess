@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 // Astra Chess - bitboards and attack tables (magic bitboards for sliders)
 #pragma once
 #include "types.h"

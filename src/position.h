@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 // Astra Chess - bitboard position with incremental Zobrist hashing and NNUE accumulators
 #pragma once
 #include <string>

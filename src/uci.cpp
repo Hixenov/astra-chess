@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 #include "uci.h"
 
 #include <atomic>
@@ -8,6 +10,7 @@
 #include <thread>
 
 #include "eval.h"
+#include "io.h"
 #include "movegen.h"
 #include "search.h"
 #include "tests.h"
@@ -25,6 +28,7 @@ public:
     void loop() {
         std::string line;
         while (std::getline(std::cin, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) line.pop_back();
             std::istringstream in(line);
             std::string cmd;
             in >> cmd;
@@ -47,7 +51,7 @@ public:
 
 private:
     void say(const std::string& s) {
-        std::lock_guard<std::mutex> lock(outMutex_);
+        std::lock_guard<std::mutex> lock(outMutex());
         std::cout << s << std::endl;
     }
 
@@ -56,6 +60,9 @@ private:
         say("id author Astra Chess Project");
         say("option name Hash type spin default 64 min 1 max 4096");
         say("option name Clear Hash type button");
+        say("option name MultiPV type spin default 1 min 1 max 256");
+        say("option name Move Overhead type spin default 10 min 0 max 5000");
+        say("option name UCI_AnalyseMode type check default false");
         say("option name UseNNUE type check default false");
         say("option name EvalFile type string default <empty>");
         say("uciok");
@@ -70,6 +77,10 @@ private:
         while (!value.empty() && value.front() == ' ') value.erase(value.begin());
         if (name == "Hash") {
             try { searcher_.setHashMb(std::size_t(std::max(1, std::min(4096, std::stoi(value))))); } catch (...) {}
+        } else if (name == "MultiPV") {
+            try { multiPv_ = std::max(1, std::min(256, std::stoi(value))); } catch (...) {}
+        } else if (name == "Move Overhead") {
+            try { overheadMs_ = std::max(0, std::min(5000, std::stoi(value))); } catch (...) {}
         } else if (name == "Clear Hash") {
             searcher_.clear();
         } else if (name == "UseNNUE") {
@@ -119,6 +130,8 @@ private:
         stopSearch();
         if (!positionOk_) { say("bestmove 0000"); return; }
         Limits lim;
+        lim.multiPv = multiPv_;
+        lim.moveOverheadMs = overheadMs_;
         std::string tok;
         long long v;
         while (in >> tok) {
@@ -130,7 +143,8 @@ private:
             else if (tok == "binc") { in >> lim.binc; }
             else if (tok == "movestogo") { in >> lim.movestogo; }
             else if (tok == "nodes") { in >> v; lim.nodes = std::uint64_t(std::max(0LL, v)); }
-            else if (tok == "infinite") { lim.infinite = true; }
+            else if (tok == "infinite" || tok == "ponder") { lim.infinite = true; }
+            else if (tok == "mate") { int n = 0; in >> n; lim.depth = std::min(lim.depth, std::max(1, 2 * n)); }
         }
         Position copy = pos_;
         worker_ = std::thread([this, copy, lim]() mutable {
@@ -171,10 +185,11 @@ private:
 
     Position pos_;
     bool positionOk_ = true;
+    int multiPv_ = 1;
+    int overheadMs_ = 10;
     Searcher searcher_;
     std::thread worker_;
     std::atomic<bool> stopFlag_{false};
-    std::mutex outMutex_;
 };
 
 }  // namespace

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 #include "search.h"
 
 #include <algorithm>
@@ -5,7 +7,10 @@
 #include <cstring>
 #include <iostream>
 
+#include <sstream>
+
 #include "eval.h"
+#include "io.h"
 
 namespace astra {
 
@@ -30,6 +35,7 @@ Searcher::Searcher() {
     for (int d = 1; d < 64; ++d)
         for (int m = 1; m < 64; ++m) lmrTable_[d][m] = int(0.75 + std::log(double(d)) * std::log(double(m)) / 2.25);
     for (int i = 0; i < 64; ++i) lmrTable_[0][i] = lmrTable_[i][0] = 0;
+    contHist_.assign(12 * 64 * 12 * 64, 0);
     setHashMb(64);
     clear();
 }
@@ -46,6 +52,8 @@ void Searcher::clear() {
     std::fill(tt_.begin(), tt_.end(), TTEntry{});
     std::memset(killers_, 0, sizeof(killers_));
     std::memset(history_, 0, sizeof(history_));
+    std::memset(counter_, 0, sizeof(counter_));
+    std::fill(contHist_.begin(), contHist_.end(), std::int16_t(0));
 }
 
 Searcher::TTEntry* Searcher::probe(Key key) { return &tt_[key & ttMask_]; }
@@ -83,7 +91,13 @@ int Searcher::scoreMove(const Position& pos, Move m, Move ttMove, int ply) const
     }
     if (m == killers_[ply][0]) return 4'000'000;
     if (m == killers_[ply][1]) return 3'900'000;
-    return history_[pos.sideToMove()][fromSq(m)][toSq(m)];
+    int s = history_[pos.sideToMove()][fromSq(m)][toSq(m)];
+    const Move prev = pos.lastMove();
+    if (prev != MOVE_NONE) {
+        if (counter_[fromSq(prev)][toSq(prev)] == m) s += 6000;
+        s += contHist_[contIndex(pos.pieceOn(toSq(prev)), toSq(prev), pos.pieceOn(fromSq(m)), toSq(m))];
+    }
+    return s;
 }
 
 void Searcher::updateQuietStats(const Position& pos, Move best, const Move* quiets, int nQuiets, int depth, int ply) {
@@ -91,10 +105,16 @@ void Searcher::updateQuietStats(const Position& pos, Move best, const Move* quie
         killers_[ply][1] = killers_[ply][0];
         killers_[ply][0] = best;
     }
-    const int bonus = std::min(depth * depth, 400);
+    const Move prev = pos.lastMove();
+    if (prev != MOVE_NONE) counter_[fromSq(prev)][toSq(prev)] = best;
+    const int bonus = std::min(depth * depth + depth, 450);
     auto upd = [&](Move m, int delta) {
         int& h = history_[pos.sideToMove()][fromSq(m)][toSq(m)];
         h += delta - h * std::abs(delta) / HISTORY_MAX;
+        if (prev != MOVE_NONE) {
+            std::int16_t& c = contHist_[contIndex(pos.pieceOn(toSq(prev)), toSq(prev), pos.pieceOn(fromSq(m)), toSq(m))];
+            c = std::int16_t(c + delta - c * std::abs(delta) / HISTORY_MAX);
+        }
     };
     upd(best, bonus);
     for (int i = 0; i < nQuiets; ++i)
@@ -115,6 +135,16 @@ int Searcher::qsearch(Position& pos, int alpha, int beta, int ply) {
     if (ply >= MAX_PLY - 1) return eval::evaluate(pos);
 
     const bool inCheck = pos.inCheck();
+    const bool pvNode = beta - alpha > 1;
+    const Key qkey = pos.key();
+    TTEntry* qe = probe(qkey);
+    const bool qHit = qe->key == qkey && qe->bound != BOUND_NONE;
+    if (qHit && !pvNode) {
+        const int ts = fromTT(qe->score, ply);
+        if (qe->bound == BOUND_EXACT || (qe->bound == BOUND_LOWER && ts >= beta) || (qe->bound == BOUND_UPPER && ts <= alpha))
+            return ts;
+    }
+    const int qOrigAlpha = alpha;
     int best = -INF;
     int stand = -INF;
     if (!inCheck) {
@@ -162,6 +192,14 @@ int Searcher::qsearch(Position& pos, int alpha, int beta, int ply) {
         }
     }
     if (inCheck && legalCount == 0) return -MATE + ply;
+    if (!stop_.load(std::memory_order_relaxed) && (!qHit || qe->depth <= 0)) {
+        qe->key = qkey;
+        qe->score = std::int16_t(toTT(best, ply));
+        qe->eval = std::int16_t(VALUE_NONE);
+        qe->depth = 0;
+        qe->move = MOVE_NONE;
+        qe->bound = best >= beta ? BOUND_LOWER : (best > qOrigAlpha ? BOUND_EXACT : BOUND_UPPER);
+    }
     return best;
 }
 
@@ -226,6 +264,9 @@ int Searcher::search(Position& pos, int depth, int alpha, int beta, int ply, boo
         }
     }
 
+    // Internal iterative reduction: no hash move at a deep node -> search a bit shallower
+    if (depth >= 5 && ttMove == MOVE_NONE && !inCheck) --depth;
+
     // Move loop
     MoveList ml;
     generate(pos, ml, GEN_ALL);
@@ -247,6 +288,11 @@ int Searcher::search(Position& pos, int depth, int alpha, int beta, int ply, boo
         std::swap(scores[i], scores[bi]);
         const Move m = ml.moves[i];
         if (!pos.legal(m)) continue;
+        if (root && nRootExcluded_) {
+            bool excluded = false;
+            for (int x = 0; x < nRootExcluded_; ++x) excluded |= rootExcluded_[x] == m;
+            if (excluded) continue;
+        }
         ++moveCount;
         const bool tactical = isTactical(m);
 
@@ -277,6 +323,7 @@ int Searcher::search(Position& pos, int depth, int alpha, int beta, int ply, boo
                 if (improving) --r;
                 if (givesCheck || inCheck) --r;
                 if (tactical) --r;
+                else r -= std::clamp(scores[i] / 5000, -2, 2);
                 r = std::clamp(r, 0, newDepth - 1);
             }
             score = -search(pos, newDepth - r, -alpha - 1, -alpha, ply + 1, true);
@@ -327,19 +374,22 @@ int Searcher::search(Position& pos, int depth, int alpha, int beta, int ply, boo
 // Iterative deepening driver
 // ---------------------------------------------------------------------------------------
 
-void Searcher::printInfo(const Position& pos, int depth, int score, long long elapsedMs) const {
-    (void)pos;
-    std::cout << "info depth " << depth << " seldepth " << selDepth_ << " score ";
-    if (std::abs(score) >= MATE_IN_MAX) {
-        const int moves = (MATE - std::abs(score) + 1) / 2;
-        std::cout << "mate " << (score > 0 ? moves : -moves);
+void Searcher::printInfo(int depth, int multipvIdx, bool multi, const PvLine& line, long long elapsedMs) const {
+    std::ostringstream o;
+    o << "info depth " << depth << " seldepth " << selDepth_;
+    if (multi) o << " multipv " << multipvIdx;
+    o << " score ";
+    if (std::abs(line.score) >= MATE_IN_MAX) {
+        const int moves = (MATE - std::abs(line.score) + 1) / 2;
+        o << "mate " << (line.score > 0 ? moves : -moves);
     } else {
-        std::cout << "cp " << score;
+        o << "cp " << line.score;
     }
     const long long nps = elapsedMs > 0 ? (long long)(nodes_) * 1000 / elapsedMs : (long long)nodes_ * 1000;
-    std::cout << " nodes " << nodes_ << " nps " << nps << " hashfull " << hashfull() << " time " << elapsedMs << " pv";
-    for (int i = 0; i < pvLen_[0]; ++i) std::cout << ' ' << moveToUci(pv_[0][i]);
-    std::cout << std::endl;
+    o << " nodes " << nodes_ << " nps " << nps << " hashfull " << hashfull() << " time " << elapsedMs << " pv";
+    for (int i = 0; i < line.len; ++i) o << ' ' << moveToUci(line.moves[i]);
+    std::lock_guard<std::mutex> lock(outMutex());
+    std::cout << o.str() << std::endl;
 }
 
 SearchResult Searcher::think(Position& pos, const Limits& lim, bool verbose) {
@@ -358,7 +408,7 @@ SearchResult Searcher::think(Position& pos, const Limits& lim, bool verbose) {
     softMs_ = hardMs_ = -1;
     if (!lim.infinite) {
         if (lim.movetime >= 0) {
-            hardMs_ = std::max(1LL, lim.movetime - 10);
+            hardMs_ = std::max(1LL, lim.movetime - lim.moveOverheadMs);
             softMs_ = hardMs_;
         } else {
             const long long remain = pos.sideToMove() == WHITE ? lim.wtime : lim.btime;
@@ -366,7 +416,7 @@ SearchResult Searcher::think(Position& pos, const Limits& lim, bool verbose) {
             if (remain >= 0) {
                 const int mtg = lim.movestogo > 0 ? lim.movestogo : 30;
                 const long long base = remain / (mtg + 1) + inc * 3 / 4;
-                hardMs_ = std::max(1LL, std::min({base * 3, remain / 3, remain - 30}));
+                hardMs_ = std::max(1LL, std::min({base * 3, remain / 3, remain - 30 - lim.moveOverheadMs}));
                 softMs_ = std::max(1LL, std::min(base, hardMs_));
             }
         }
@@ -380,45 +430,69 @@ SearchResult Searcher::think(Position& pos, const Limits& lim, bool verbose) {
     pos.attachNetwork(eval::activeNetwork());
     for (int i = 0; i < MAX_PLY + 1; ++i) pvLen_[i] = i;
 
-    int prevScore = 0;
     const int maxDepth = std::clamp(lim.depth, 1, MAX_PLY - 2);
+    const int mpv = std::clamp(lim.multiPv, 1, std::min(legal.size, 255));
+    const bool multi = mpv > 1;
+    std::vector<PvLine> lines(mpv), prevLines(mpv);
+    std::vector<int> prevScore(mpv, 0);
+    bool havePrev = false;
+
     for (rootDepth_ = 1; rootDepth_ <= maxDepth; ++rootDepth_) {
-        int window = 25;
-        int alpha = rootDepth_ >= 5 ? std::max(-INF, prevScore - window) : -INF;
-        int beta = rootDepth_ >= 5 ? std::min(INF, prevScore + window) : INF;
-        int score = 0;
-        Move iterBest = MOVE_NONE;
-        while (true) {
-            rootBest_ = MOVE_NONE;
-            score = search(pos, rootDepth_, alpha, beta, 0, false);
-            if (rootBest_ != MOVE_NONE) iterBest = rootBest_;
-            if (stop_.load(std::memory_order_relaxed)) break;
-            if (score <= alpha && alpha > -INF) {
-                beta = (alpha + beta) / 2;
-                alpha = std::max(-INF, score - window);
-                window += window / 2 + 5;
-            } else if (score >= beta && beta < INF) {
-                beta = std::min(INF, score + window);
-                window += window / 2 + 5;
-            } else {
+        bool stopped = false;
+        nRootExcluded_ = 0;
+        for (int k = 0; k < mpv && !stopped; ++k) {
+            int window = 25;
+            const bool useWindow = rootDepth_ >= 5 && !multi;
+            int alpha = useWindow ? std::max(-INF, prevScore[k] - window) : -INF;
+            int beta = useWindow ? std::min(INF, prevScore[k] + window) : INF;
+            int score = 0;
+            Move iterBest = MOVE_NONE;
+            while (true) {
+                rootBest_ = MOVE_NONE;
+                score = search(pos, rootDepth_, alpha, beta, 0, false);
+                if (rootBest_ != MOVE_NONE) iterBest = rootBest_;
+                if (stop_.load(std::memory_order_relaxed)) break;
+                if (score <= alpha && alpha > -INF) {
+                    beta = (alpha + beta) / 2;
+                    alpha = std::max(-INF, score - window);
+                    window += window / 2 + 5;
+                } else if (score >= beta && beta < INF) {
+                    beta = std::min(INF, score + window);
+                    window += window / 2 + 5;
+                } else {
+                    break;
+                }
+            }
+            if (stop_.load(std::memory_order_relaxed)) {
+                stopped = true;
+                // A partially searched first line is only trusted if it already found a new best move.
+                if (k == 0 && iterBest != MOVE_NONE && rootDepth_ > 1) res.best = iterBest;
                 break;
             }
+            PvLine& L = lines[k];
+            L.score = score;
+            L.len = std::max(1, pvLen_[0]);
+            for (int i = 0; i < L.len; ++i) L.moves[i] = pv_[0][i];
+            if (pvLen_[0] == 0) L.moves[0] = iterBest;
+            prevScore[k] = score;
+            rootExcluded_[nRootExcluded_++] = L.moves[0];
         }
-        const bool stopped = stop_.load(std::memory_order_relaxed);
-        if (stopped) {
-            // A partially searched iteration is only trusted if it already found a new best move.
-            if (iterBest != MOVE_NONE && rootDepth_ > 1) res.best = iterBest;
-            break;
-        }
-        res.best = pv_[0][0] != MOVE_NONE && pvLen_[0] > 0 ? pv_[0][0] : (iterBest != MOVE_NONE ? iterBest : res.best);
-        res.score = score;
+        if (stopped) break;
+        // Report lines best-first (a later line can outscore an earlier one due to search instability).
+        std::stable_sort(lines.begin(), lines.end(), [](const PvLine& a, const PvLine& b) { return a.score > b.score; });
+        res.best = lines[0].moves[0];
+        res.score = lines[0].score;
         res.depth = rootDepth_;
-        prevScore = score;
+        havePrev = true;
         const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start_).count();
-        if (verbose_) printInfo(pos, rootDepth_, score, ms);
+        if (verbose_)
+            for (int k = 0; k < mpv; ++k) printInfo(rootDepth_, k + 1, multi, lines[k], ms);
+        const int score0 = lines[0].score;
         if (!lim.infinite && softMs_ >= 0 && ms >= softMs_ * 6 / 10 && lim.movetime < 0) break;
-        if (std::abs(score) >= MATE_IN_MAX && rootDepth_ >= 2 && (MATE - std::abs(score)) * 2 <= rootDepth_ && !lim.infinite) break;
+        if (!multi && std::abs(score0) >= MATE_IN_MAX && rootDepth_ >= 2 && (MATE - std::abs(score0)) * 2 <= rootDepth_ && !lim.infinite) break;
     }
+    (void)havePrev; (void)prevLines;
+    nRootExcluded_ = 0;
     res.nodes = nodes_;
     pos.attachNetwork(nullptr);
     return res;

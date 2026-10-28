@@ -1,4 +1,4 @@
-# Astra Chess 0.5 architecture
+# Astra Chess architecture
 
 ```
 src/types.h       squares, pieces, 16-bit move encoding (from | to<<6 | flag<<12)

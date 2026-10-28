@@ -9,9 +9,11 @@ MOVE_RE='^bestmove [a-h][1-8][a-h][1-8][qrbn]?$'
 
 # 1. Handshake, options, fixed-depth search
 (printf 'uci\nisready\nposition startpos\ngo depth 6\n'; sleep 0.5; printf 'quit\n') | $BIN > "$TMP/a.txt"
-grep -q '^id name Astra Chess 0.5$' "$TMP/a.txt"
+grep -q '^id name Astra Chess 0.6$' "$TMP/a.txt"
 grep -q '^option name Hash type spin' "$TMP/a.txt"
 grep -q '^option name UseNNUE type check' "$TMP/a.txt"
+grep -q '^option name MultiPV type spin' "$TMP/a.txt"
+grep -q '^option name Move Overhead type spin' "$TMP/a.txt"
 grep -q '^option name EvalFile type string' "$TMP/a.txt"
 grep -q '^uciok$' "$TMP/a.txt"
 grep -q '^readyok$' "$TMP/a.txt"
@@ -59,7 +61,31 @@ grep -q 'NNUE network loaded' "$TMP/i.txt"
 grep -q '^nnue: ' "$TMP/i.txt"
 grep -Eq "$MOVE_RE" "$TMP/i.txt"
 
-# 9. Deterministic node count for a fixed-depth bench (regression signature)
+# 9. Windows-style CRLF line endings from the GUI
+(printf 'uci\r\nisready\r\nposition startpos moves e2e4\r\ngo depth 4\r\n'; sleep 0.3; printf 'quit\r\n') | $BIN > "$TMP/j.txt"
+grep -q '^uciok$' "$TMP/j.txt"
+grep -q '^readyok$' "$TMP/j.txt"
+grep -Eq "$MOVE_RE" "$TMP/j.txt"
+
+# 10. MultiPV: analysis lines with distinct first moves, ordered by score
+(printf 'setoption name MultiPV value 3\nposition startpos\ngo depth 6\n'; sleep 0.5; printf 'quit\n') | $BIN > "$TMP/k.txt"
+grep -q 'info depth 6 .* multipv 1 ' "$TMP/k.txt"
+grep -q 'info depth 6 .* multipv 2 ' "$TMP/k.txt"
+grep -q 'info depth 6 .* multipv 3 ' "$TMP/k.txt"
+FIRST=$(grep 'info depth 6 ' "$TMP/k.txt" | sed 's/.* pv //' | awk '{print $1}' | sort -u | wc -l)
+[ "$FIRST" -eq 3 ]
+grep -Eq "$MOVE_RE" "$TMP/k.txt"
+
+# 11. MultiPV larger than the number of legal moves is clamped (1 legal move)
+(printf 'setoption name MultiPV value 5\nposition fen 7k/8/8/8/8/8/6q1/K7 w - - 0 1\ngo depth 3\n'; sleep 0.3; printf 'quit\n') | $BIN > "$TMP/l.txt"
+grep -Eq "$MOVE_RE" "$TMP/l.txt"
+
+# 12. isready is answered while a search is running
+(printf 'position startpos\ngo infinite\n'; sleep 0.2; printf 'isready\n'; sleep 0.2; printf 'stop\n'; sleep 0.2; printf 'quit\n') | $BIN > "$TMP/m.txt"
+grep -q '^readyok$' "$TMP/m.txt"
+[ "$(grep -c '^bestmove' "$TMP/m.txt")" -eq 1 ]
+
+# 13. Deterministic node count for a fixed-depth bench (regression signature)
 $BIN --bench 6 | tail -1 | grep -q ' nodes '
 
-printf 'All Astra Chess 0.5 UCI tests passed.\n'
+printf 'All Astra Chess 0.6 UCI tests passed.\n'

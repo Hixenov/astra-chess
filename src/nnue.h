@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 // Astra Chess - NNUE architecture (inference side)
 //
 // Architecture "PS768 -> H -> 1" (single hidden layer, perspective network):

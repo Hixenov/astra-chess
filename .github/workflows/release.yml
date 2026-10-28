@@ -1,0 +1,57 @@
+name: Release binaries
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: astra-linux-x86_64
+            file: astra
+            make: make static
+          - os: windows-latest
+            name: astra-windows-x86_64.exe
+            file: astra.exe
+            make: make static
+          - os: macos-latest
+            name: astra-macos
+            file: astra
+            make: make
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        if: matrix.os == 'windows-latest'
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc
+      - name: Build (portable baseline x86-64, no -march=native)
+        run: ${{ matrix.make }} -j2
+      - name: Self-test
+        run: ./${{ matrix.file }} --selftest
+      - name: Rename
+        run: cp ${{ matrix.file }} ${{ matrix.name }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: astra-*

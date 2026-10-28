@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 // Astra Chess - search
 #pragma once
 #include <atomic>
@@ -17,6 +19,8 @@ struct Limits {
     int movestogo = 0;
     std::uint64_t nodes = 0;  // 0 = unlimited
     bool infinite = false;
+    int multiPv = 1;
+    int moveOverheadMs = 10;
 };
 
 struct SearchResult {
@@ -52,7 +56,8 @@ private:
     void checkLimits();
     int scoreMove(const Position& pos, Move m, Move ttMove, int ply) const;
     void updateQuietStats(const Position& pos, Move best, const Move* quiets, int nQuiets, int depth, int ply);
-    void printInfo(const Position& pos, int depth, int score, long long elapsedMs) const;
+    struct PvLine { int score = 0; int len = 0; Move moves[MAX_PLY + 1]; };
+    void printInfo(int depth, int multipvIdx, bool multi, const PvLine& line, long long elapsedMs) const;
 
     TTEntry* probe(Key key);
     int hashfull() const;
@@ -65,6 +70,8 @@ private:
     int rootDepth_ = 0;
     int selDepth_ = 0;
     Move rootBest_ = MOVE_NONE;
+    Move rootExcluded_[256];
+    int nRootExcluded_ = 0;
 
     std::chrono::steady_clock::time_point start_;
     long long softMs_ = -1, hardMs_ = -1;
@@ -75,6 +82,9 @@ private:
     int pvLen_[MAX_PLY + 1];
     Move killers_[MAX_PLY + 2][2];
     int history_[2][64][64];
+    Move counter_[64][64];
+    std::vector<std::int16_t> contHist_;  // [prevPiece][prevTo][piece][to]
+    static int contIndex(Piece pp, Square pt, Piece p, Square t) { return ((int(pp) * 64 + pt) * 12 + int(p)) * 64 + t; }
     int evalStack_[MAX_PLY + 2];
     int lmrTable_[64][64];
 };

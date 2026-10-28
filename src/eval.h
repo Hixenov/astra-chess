@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Astra Chess - Copyright (C) Astra Chess contributors. See LICENSE.
 // Astra Chess - evaluation (hand-crafted, with optional NNUE backend)
 #pragma once
 #include <string>
@@ -8,6 +10,13 @@ namespace astra {
 namespace eval {
 
 void init();
+
+// Tunable evaluation parameters (used by the Texel tuner, `--tune`).
+int paramCount();
+int& param(int i);
+const char* paramName(int i);
+int paramStep(int i);
+void rebuildTables();  // call after changing parameters
 
 // Score in centipawns from the side-to-move's point of view.
 // Uses NNUE if a network is attached to the position, otherwise the classical evaluation.

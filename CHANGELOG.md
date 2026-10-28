@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6
+GUI compatibility (MultiPV, Move Overhead, CRLF-safe UCI, serialised output, release binaries in CI), GPL-3.0-or-later
+licence, new evaluation terms (threats, outposts, king safety), Texel-tuned weights, TT in quiescence, countermove and
+continuation history, IIR, `--datagen` / `--tune`.
+
 ## 0.5
 Bitboards + magic bitboards, incremental Zobrist, SEE, NNUE architecture (inference, file format, incremental
 accumulators), match runner with Elo/LOS/SPRT, expanded self-tests, CI, multi-file source layout.
