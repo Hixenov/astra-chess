@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# UCI protocol tests for Astra Chess (run via `make test`).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+BIN=./astra
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+MOVE_RE='^bestmove [a-h][1-8][a-h][1-8][qrbn]?$'
+
+# 1. Handshake, options, fixed-depth search
+(printf 'uci\nisready\nposition startpos\ngo depth 6\n'; sleep 0.5; printf 'quit\n') | $BIN > "$TMP/a.txt"
+grep -q '^id name Astra Chess 0.5$' "$TMP/a.txt"
+grep -q '^option name Hash type spin' "$TMP/a.txt"
+grep -q '^option name UseNNUE type check' "$TMP/a.txt"
+grep -q '^option name EvalFile type string' "$TMP/a.txt"
+grep -q '^uciok$' "$TMP/a.txt"
+grep -q '^readyok$' "$TMP/a.txt"
+grep -q '^info depth 6 ' "$TMP/a.txt"
+grep -Eq "$MOVE_RE" "$TMP/a.txt"
+
+# 2. Timed search returns a legal move quickly
+START=$(date +%s%N)
+(printf 'position startpos moves e2e4 e7e5\ngo movetime 100\n'; sleep 0.4; printf 'quit\n') | $BIN > "$TMP/b.txt"
+grep -Eq "$MOVE_RE" "$TMP/b.txt"
+ELAPSED=$(( ($(date +%s%N) - START) / 1000000 ))
+[ "$ELAPSED" -lt 2000 ]
+
+# 3. `stop` interrupts an infinite search and still yields exactly one bestmove
+(printf 'position startpos\ngo infinite\n'; sleep 0.2; printf 'stop\n'; sleep 0.2; printf 'quit\n') | $BIN > "$TMP/c.txt"
+[ "$(grep -c '^bestmove' "$TMP/c.txt")" -eq 1 ]
+grep -Eq "$MOVE_RE" "$TMP/c.txt"
+
+# 4. Game clocks
+(printf 'position startpos\ngo wtime 2000 btime 2000 winc 50 binc 50\n'; sleep 0.6; printf 'quit\n') | $BIN > "$TMP/d.txt"
+grep -Eq "$MOVE_RE" "$TMP/d.txt"
+
+# 5. FEN positions, mate score and promotion move format
+(printf 'position fen 6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1\ngo depth 5\n'; sleep 0.3; printf 'quit\n') | $BIN > "$TMP/e.txt"
+grep -q '^bestmove a1a8$' "$TMP/e.txt"
+grep -q 'score mate 1' "$TMP/e.txt"
+(printf 'position fen 8/P6k/8/8/8/8/8/K7 w - - 0 1\ngo depth 4\n'; sleep 0.3; printf 'quit\n') | $BIN > "$TMP/f.txt"
+grep -Eq '^bestmove a7a8[qrbn]$' "$TMP/f.txt"
+
+# 6. Illegal move in `position` is reported, not played; status helper works
+(printf 'position startpos moves e2e5\nstatus\nposition startpos moves f2f3 e7e5 g2g4 d8h4\nstatus\nquit\n') | $BIN > "$TMP/g.txt"
+grep -q 'illegal move e2e5' "$TMP/g.txt"
+grep -q '^status illegal$' "$TMP/g.txt"
+grep -q '^status checkmate$' "$TMP/g.txt"
+
+# 7. Hash option, ucinewgame, NNUE option plumbing (no network loaded -> falls back)
+(printf 'setoption name Hash value 16\nucinewgame\nsetoption name UseNNUE value true\nsetoption name EvalFile value /nonexistent.nnue\nposition startpos\ngo depth 4\n'; sleep 0.3; printf 'quit\n') | $BIN > "$TMP/h.txt"
+grep -q 'NNUE load failed' "$TMP/h.txt"
+grep -Eq "$MOVE_RE" "$TMP/h.txt"
+
+# 8. NNUE end to end with a generated (random) test network: loads, searches, stays legal
+$BIN --gen-test-net "$TMP/test.nnue" 32 7 > /dev/null
+(printf "setoption name EvalFile value $TMP/test.nnue\nsetoption name UseNNUE value true\nposition startpos\ngo depth 5\neval\n"; sleep 0.5; printf 'quit\n') | $BIN > "$TMP/i.txt"
+grep -q 'NNUE network loaded' "$TMP/i.txt"
+grep -q '^nnue: ' "$TMP/i.txt"
+grep -Eq "$MOVE_RE" "$TMP/i.txt"
+
+# 9. Deterministic node count for a fixed-depth bench (regression signature)
+$BIN --bench 6 | tail -1 | grep -q ' nodes '
+
+printf 'All Astra Chess 0.5 UCI tests passed.\n'

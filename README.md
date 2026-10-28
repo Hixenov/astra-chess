@@ -1,66 +1,60 @@
-# Astra Chess 0.4
+# Astra Chess 0.5
 
-Astra Chess is a C++17 chess engine with a UCI interface. This release improves root search and, importantly, adds standard-position perft regression tests that exercise castling, en passant, promotions, checks and pins. It is still a development engine; **2500 Elo is not claimed or verified**.
+A UCI chess engine in C++17, built as a learning/development project in the spirit of
+[Stockfish](https://github.com/official-stockfish/Stockfish), [Velvet](https://github.com/mhonert/velvet-chess)
+and [Winter](https://github.com/rosenthj/Winter). **No Elo rating is claimed**: strength has only been compared
+against earlier Astra versions (see below), not against rated engines.
 
-## What's new in v0.4
+## What's new in 0.5
 
-- Aspiration windows at the root, with widening on fail-low/fail-high.
-- Fixed 0x88 edge-wrap errors in piece attacks and move generation.
-- Fixed en-passant unmake logic that could leave a duplicate captured pawn on the board.
-- Improved repetition history bookkeeping so the current position is not double-counted.
-- Expanded perft regression suite with canonical Kiwipete and tactical/endgame positions.
-- Keeps PVS, conservative late-move reductions, null-move pruning, killer moves, history heuristic, quiescence search, transposition table, timed asynchronous UCI search and `stop` support.
+| Area | Change |
+|------|--------|
+| **Bitboards** | New board representation (12 piece/colour bitboards + mailbox), **magic bitboards** for sliders (magics found at start-up), incremental Zobrist hashing, fast legality via `checkers`/`pinned` instead of make+test, bulk-counted perft |
+| **SEE** | Swap-algorithm Static Exchange Evaluation with x-rays. Used for capture ordering, quiescence filtering and SEE pruning in the main search |
+| **NNUE-ready** | `PS768 -> H -> 1` network: file format, loader, incrementally updated accumulators in make/unmake, `UseNNUE` / `EvalFile` UCI options. **No trained network is bundled** - classical evaluation is the default (see `docs/NNUE.md`) |
+| **Matches** | `tools/match.py`: automatic engine-vs-engine matches, opening pairs with colours swapped, Elo +- 95% CI, LOS, SPRT |
+| **Search** | Real PV and `seldepth`/`hashfull` output, `Hash` option, reverse futility, futility/late-move pruning, check extension, history malus, mate-distance pruning |
+| **Tests** | `--selftest`: perft (incl. en-passant edge cases), SEE values, magic check, hashing & legality cross-checks on ~18k random-game positions, NNUE incremental == refresh, repetition rules, search sanity. CI + sanitizer build |
 
-## Build on Arch Linux
-
-```bash
-sudo pacman -S --needed base-devel
-make
-make test
-```
-
-## UCI use
-
-Configure `astra` as a UCI engine in your chess GUI. Quick terminal check:
-
-```text
-uci
-isready
-position startpos
-go depth 10
-stop
-quit
-```
-
-Time controls are accepted, for example:
-
-```text
-go wtime 300000 btime 300000 winc 2000 binc 2000
-```
-
-## Perft regression tests
+## Build and run
 
 ```bash
-./astra --perft 4
-./astra --perft-fen 3 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'
-make test
+make            # or: make native   (adds -march=native)
+make test       # self-test + UCI tests
+./astra         # speaks UCI; use it in any GUI (Arena, CuteChess, Banksia, ...)
+./astra --bench 9
+./astra --perft 5
 ```
 
-The suite checks start-position counts through depth 4, Kiwipete through depth 3, and additional tactical positions. Expected canonical counts include start position depth 4 = 197281, Kiwipete depth 3 = 97862, and position 3 depth 3 = 2812.
+UCI options: `Hash` (MB), `Clear Hash`, `UseNNUE`, `EvalFile`.
+Extra commands: `d`, `eval`, `perft N`, `bench N`, `status` (used by the match tool).
 
-## Limitations on the path to 2500 Elo
+## Measuring strength
 
-- **2500 Elo has not been demonstrated.** A rating requires controlled matches against rated engines with sufficient games and confidence intervals.
-- Uses a 0x88 mailbox board, not bitboards; move generation is correct on the current perft suite but needs broader differential testing.
-- Hand-crafted evaluation only; no trained NNUE network is bundled.
-- No Syzygy tablebases, robust static exchange evaluation, configurable hash size, or complete tournament-grade draw/repetition adjudication.
-- The repetition logic tracks the supplied move history and search path, but should be validated against a dedicated rule test suite before tournament use.
-- Search and evaluation remain far below modern top-engine architecture and strength.
+```bash
+cp astra astra-old                       # build the baseline first
+# ... make changes, rebuild ...
+python3 tools/match.py ./astra ./astra-old --games 400 --movetime 100 --concurrency 2
+python3 tools/match.py ./astra ./astra-old --games 4000 --movetime 50 --sprt 0 5   # stops when decided
+```
+
+**Result of 0.5 vs 0.4** (50 ms/move, 100 games, single core, 20 openings with colours swapped):
+**+100 =0 -0**. A shut-out cannot be converted into a meaningful Elo number; the 95% lower bound is
+roughly +750 Elo, so 0.5 is vastly stronger than 0.4. This says nothing about absolute strength.
+Speed: about 1.6 M nodes/s in `--bench` on the development machine versus about 0.5 M for 0.4
+(different search, so not an apples-to-apples comparison).
+
+## Known limitations
+
+* Standard chess only (no Chess960), single search thread, no Syzygy, no pondering.
+* SEE does not exclude absolutely pinned recapturers; promotions/en passant are treated as neutral.
+* Evaluation is a compact hand-crafted function with generated piece-square terms - not tuned.
+* The NNUE network is not trained yet; the time-management logic is simple.
+* Absolute playing strength has not been measured against rated engines.
 
 ## Roadmap
 
-1. Differential move-generation testing across a broad perft suite.
-2. Bitboards and incremental Zobrist updates.
-3. Static exchange evaluation and further search tuning.
-4. Integrate a licensed, compatible NNUE network or train an original network.
-5. Run self-play and matches against known engines, tune parameters, and estimate Elo statistically.
+1. **Self-play data generation** (`datagen`) and a training pipeline -> first trained NNUE net (see `docs/NNUE.md`).
+2. **Parameter tuning** from self-play (SPSA) for search constants (`RFP`, `LMR`, futility margins) and eval terms.
+3. Gauntlet against rated engines (e.g. Stockfish with `UCI_LimitStrength`) to anchor an Elo estimate.
+4. Lazy-SMP multithreading, Syzygy probing, king-bucketed NNUE features + AVX2.

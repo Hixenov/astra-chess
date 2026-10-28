@@ -1,0 +1,7 @@
+build/
+astra
+astra-*
+*.nnue
+*.o
+games*.txt
+__pycache__/
