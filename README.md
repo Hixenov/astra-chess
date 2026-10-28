@@ -1,20 +1,17 @@
-# Astra Chess 0.3
+# Astra Chess 0.4
 
-Astra Chess is a C++17 chess engine project with a UCI interface. Version 0.3 is a stronger search prototype, not a verified 2500-Elo engine.
+Astra Chess is a C++17 chess engine with a UCI interface. This release improves root search and, importantly, adds standard-position perft regression tests that exercise castling, en passant, promotions, checks and pins. It is still a development engine; **2500 Elo is not claimed or verified**.
 
-## What's new in v0.3
+## What's new in v0.4
 
-- Iterative deepening and negamax alpha-beta search with transposition table.
-- Principal-variation search and conservative late-move reductions.
-- Killer-move and history-heuristic ordering for quiet moves.
-- Quiescence search, capture/promotion ordering, and mate-distance score storage.
-- Basic positional evaluation: material, piece activity/centralization, pawn advancement, doubled/isolated pawns, bishop pair, seventh-rank rooks and king pawn shelter.
-- UCI search runs asynchronously, so `stop` and `quit` can interrupt it.
-- Time management for `go movetime`, `wtime`, `btime`, `winc`, `binc`, and `movestogo`.
-- Basic threefold-repetition path detection and fifty-move counter handling in search.
-- Perft commands for move-generation regression tests.
+- Aspiration windows at the root, with widening on fail-low/fail-high.
+- Fixed 0x88 edge-wrap errors in piece attacks and move generation.
+- Fixed en-passant unmake logic that could leave a duplicate captured pawn on the board.
+- Improved repetition history bookkeeping so the current position is not double-counted.
+- Expanded perft regression suite with canonical Kiwipete and tactical/endgame positions.
+- Keeps PVS, conservative late-move reductions, null-move pruning, killer moves, history heuristic, quiescence search, transposition table, timed asynchronous UCI search and `stop` support.
 
-## Build (Arch Linux)
+## Build on Arch Linux
 
 ```bash
 sudo pacman -S --needed base-devel
@@ -22,15 +19,15 @@ make
 make test
 ```
 
-## Use with a UCI chess GUI
+## UCI use
 
-Select the compiled `astra` executable as the engine. From a terminal:
+Configure `astra` as a UCI engine in your chess GUI. Quick terminal check:
 
 ```text
 uci
 isready
 position startpos
-go depth 8
+go depth 10
 stop
 quit
 ```
@@ -41,36 +38,29 @@ Time controls are accepted, for example:
 go wtime 300000 btime 300000 winc 2000 binc 2000
 ```
 
-## Tests
+## Perft regression tests
 
 ```bash
-./astra --perft 1  # 20
-./astra --perft 2  # 400
-./astra --perft 3  # 8902
-./astra --perft 4  # 197281
+./astra --perft 4
+./astra --perft-fen 3 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'
 make test
 ```
 
-For a FEN position:
+The suite checks start-position counts through depth 4, Kiwipete through depth 3, and additional tactical positions. Expected canonical counts include start position depth 4 = 197281, Kiwipete depth 3 = 97862, and position 3 depth 3 = 2812.
 
-```bash
-./astra --perft-fen 3 'FEN GOES HERE'
-./astra --list-fen 'FEN GOES HERE'
-```
+## Limitations on the path to 2500 Elo
 
-## Important limitations
+- **2500 Elo has not been demonstrated.** A rating requires controlled matches against rated engines with sufficient games and confidence intervals.
+- Uses a 0x88 mailbox board, not bitboards; move generation is correct on the current perft suite but needs broader differential testing.
+- Hand-crafted evaluation only; no trained NNUE network is bundled.
+- No Syzygy tablebases, robust static exchange evaluation, configurable hash size, or complete tournament-grade draw/repetition adjudication.
+- The repetition logic tracks the supplied move history and search path, but should be validated against a dedicated rule test suite before tournament use.
+- Search and evaluation remain far below modern top-engine architecture and strength.
 
-- **2500 Elo has not been demonstrated.** No strength rating is claimed until Astra is tested in controlled engine matches against rated opponents.
-- The board uses a 0x88 mailbox rather than bitboards; legal move generation is not yet optimized for high performance.
-- Evaluation is hand-written and basic; no trained NNUE network is included.
-- Search is still missing several established techniques, including null-move pruning, aspiration windows, robust SEE, tablebases, and advanced draw handling.
-- Hash size is fixed in this build. Repetition detection is a search-path approximation, not a complete tournament-grade repetition implementation.
-- Tests cover start-position perft and UCI smoke checks; special-position perft and tactical suites are still needed.
+## Roadmap
 
-## Roadmap toward serious playing strength
-
-1. Verify move generation against a broad perft suite and differential testing.
-2. Add null-move pruning, aspiration windows, SEE and more advanced pruning with regression tests.
-3. Replace the mailbox move generator with bitboards and incremental position/hash updates.
-4. Integrate or train an NNUE evaluator and tune search parameters with self-play.
-5. Run thousands of games against known engines and estimate Elo with confidence intervals.
+1. Differential move-generation testing across a broad perft suite.
+2. Bitboards and incremental Zobrist updates.
+3. Static exchange evaluation and further search tuning.
+4. Integrate a licensed, compatible NNUE network or train an original network.
+5. Run self-play and matches against known engines, tune parameters, and estimate Elo statistically.

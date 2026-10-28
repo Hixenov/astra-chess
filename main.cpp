@@ -35,6 +35,15 @@ int color(char p) { if (!p || p=='.') return 0; return std::isupper((unsigned ch
 bool on(int s) { return s>=0 && s<128 && !(s&0x88); }
 int fileOf(int s) { return s&7; }
 int rankOf(int s) { return 8-(s>>4); }
+bool validStep(int from,int to,int delta) {
+    if(!on(to)) return false;
+    const int df=std::abs(fileOf(to)-fileOf(from));
+    const int dr=std::abs(rankOf(to)-rankOf(from));
+    if(delta==1||delta==-1) return df==1&&dr==0;
+    if(delta==16||delta==-16) return df==0&&dr==1;
+    if(delta==15||delta==-15||delta==17||delta==-17) return df==1&&dr==1;
+    return (df==1&&dr==2)||(df==2&&dr==1);
+}
 std::string nameSq(int s) { return std::string(1, char('a'+fileOf(s)))+char('0'+rankOf(s)); }
 int parseSq(const std::string& s) { if(s.size()!=2||s[0]<'a'||s[0]>'h'||s[1]<'1'||s[1]>'8') return -1; return (8-(s[1]-'0'))*16+(s[0]-'a'); }
 char lower(char c) { return (char)std::tolower((unsigned char)c); }
@@ -65,12 +74,12 @@ int kingSq(const Board& b,int side){char k=side==1?'K':'k';for(int s=0;s<128;s++
 bool attacked(const Board& b,int target,int by) {
     // Pawns attack diagonally forward: white moves toward decreasing mailbox ranks.
     int pawn=by==1?'P':'p'; int from1=target+16*by-1, from2=target+16*by+1;
-    if(on(from1)&&b.sq[from1]==pawn)return true;
-    if(on(from2)&&b.sq[from2]==pawn)return true;
-    for(int d:KNIGHT_DIRS){int s=target+d;if(on(s)&&color(b.sq[s])==by&&lower(b.sq[s])=='n')return true;}
-    for(int d:BISHOP_DIRS){for(int s=target+d;on(s);s+=d){char p=b.sq[s];if(p!='.'){if(color(p)==by&&(lower(p)=='b'||lower(p)=='q'))return true;break;}}}
-    for(int d:ROOK_DIRS){for(int s=target+d;on(s);s+=d){char p=b.sq[s];if(p!='.'){if(color(p)==by&&(lower(p)=='r'||lower(p)=='q'))return true;break;}}}
-    for(int d:KING_DIRS){int s=target+d;if(on(s)&&color(b.sq[s])==by&&lower(b.sq[s])=='k')return true;}
+    if(validStep(target,from1,16*by-1)&&b.sq[from1]==pawn)return true;
+    if(validStep(target,from2,16*by+1)&&b.sq[from2]==pawn)return true;
+    for(int d:KNIGHT_DIRS){int s=target+d;if(validStep(target,s,d)&&color(b.sq[s])==by&&lower(b.sq[s])=='n')return true;}
+    for(int d:BISHOP_DIRS){int prev=target;for(int s=target+d;on(s)&&validStep(prev,s,d);prev=s,s+=d){char p=b.sq[s];if(p!='.'){if(color(p)==by&&(lower(p)=='b'||lower(p)=='q'))return true;break;}}}
+    for(int d:ROOK_DIRS){int prev=target;for(int s=target+d;on(s)&&validStep(prev,s,d);prev=s,s+=d){char p=b.sq[s];if(p!='.'){if(color(p)==by&&(lower(p)=='r'||lower(p)=='q'))return true;break;}}}
+    for(int d:KING_DIRS){int s=target+d;if(validStep(target,s,d)&&color(b.sq[s])==by&&lower(b.sq[s])=='k')return true;}
     return false;
 }
 bool inCheck(const Board& b,int side){int k=kingSq(b,side);return k<0||attacked(b,k,-side);}
@@ -78,9 +87,9 @@ std::vector<Move> pseudo(const Board& b) {
     std::vector<Move> out;
     for(int from=0;from<128;from++){if(!on(from)||color(b.sq[from])!=b.stm)continue;char p=lower(b.sq[from]);
         auto add=[&](int to,int flags=0){if(color(b.sq[to])==-b.stm&&lower(b.sq[to])=='k')return; if(p=='p'&&(rankOf(to)==1||rankOf(to)==8)){for(char q:std::string("qrbn"))out.push_back({from,to,q,flags});}else out.push_back({from,to,0,flags});};
-        if(p=='p') {int to=from-16*b.stm;if(on(to)&&b.sq[to]=='.'){add(to);int two=to-16*b.stm;if(rankOf(from)==(b.stm==1?2:7)&&on(two)&&b.sq[two]=='.')add(two,PAWN2);}for(int df:{-1,1}){int t=to+df;if(!on(t))continue;if(color(b.sq[t])==-b.stm)add(t);else if(t==b.ep)add(t,EP);}}
+        if(p=='p') {int to=from-16*b.stm;if(on(to)&&b.sq[to]=='.'){add(to);int two=to-16*b.stm;if(rankOf(from)==(b.stm==1?2:7)&&on(two)&&b.sq[two]=='.')add(two,PAWN2);}for(int df:{-1,1}){int t=to+df;if(!on(t)||std::abs(fileOf(t)-fileOf(from))!=1)continue;if(color(b.sq[t])==-b.stm)add(t);else if(t==b.ep)add(t,EP);}}
         else {const int* ds=nullptr;int count=0;switch(p){case 'n':ds=KNIGHT_DIRS;count=8;break;case 'b':ds=BISHOP_DIRS;count=4;break;case 'r':ds=ROOK_DIRS;count=4;break;case 'q':ds=KING_DIRS;count=8;break;case 'k':ds=KING_DIRS;count=8;break;}
-            for(int i=0;i<count;i++){int d=ds[i];for(int to=from+d;on(to);to+=d){if(color(b.sq[to])==b.stm)break;add(to);if(b.sq[to]!='.'||p=='n'||p=='k')break;}}
+            for(int i=0;i<count;i++){int d=ds[i],prev=from;for(int to=from+d;on(to)&&validStep(prev,to,d);prev=to,to+=d){if(color(b.sq[to])==b.stm)break;add(to);if(b.sq[to]!='.'||p=='n'||p=='k')break;}}
             if(p=='k'&&!inCheck(b,b.stm)){int home=b.stm==1?116:4;char rook=b.stm==1?'R':'r';int ks=b.stm==1?1:4,qs=b.stm==1?2:8;
                 if(from==home&&(b.castling&ks)&&b.sq[home+3]==rook&&b.sq[home+1]=='.'&&b.sq[home+2]=='.'&&!attacked(b,home+1,-b.stm)&&!attacked(b,home+2,-b.stm))add(home+2,CASTLE);
                 if(from==home&&(b.castling&qs)&&b.sq[home-4]==rook&&b.sq[home-1]=='.'&&b.sq[home-2]=='.'&&b.sq[home-3]=='.'&&!attacked(b,home-1,-b.stm)&&!attacked(b,home-2,-b.stm))add(home-2,CASTLE);
@@ -99,7 +108,7 @@ Undo makeMove(Board& b,const Move& m){Undo u{b.sq[m.to],b.castling,b.ep,b.halfmo
     if(m.from==0||m.to==0)b.castling&=~8;
     b.ep=(m.flags&PAWN2)?(m.from+m.to)/2:-1;b.halfmove=(lower(p)=='p'||u.captured!='.')?0:b.halfmove+1;if(b.stm==-1)++b.fullmove;b.stm=-b.stm;return u;
 }
-void unmakeMove(Board& b,const Move& m,const Undo& u){b.stm=-b.stm;if(b.stm==-1)--b.fullmove;b.sq[m.from]=b.sq[m.to];if(m.promo)b.sq[m.from]=b.stm==1?'P':'p';b.sq[m.to]=u.captured;if(m.flags&EP)b.sq[m.to+16*b.stm]=b.stm==1?'p':'P';if(m.flags&CASTLE){int rf=m.to>m.from?m.from+3:m.from-4,rt=m.to>m.from?m.from+1:m.from-1;b.sq[rf]=b.sq[rt];b.sq[rt]='.';}b.castling=u.castling;b.ep=u.ep;b.halfmove=u.halfmove;b.fullmove=u.fullmove;}
+void unmakeMove(Board& b,const Move& m,const Undo& u){b.stm=-b.stm;if(b.stm==-1)--b.fullmove;b.sq[m.from]=b.sq[m.to];if(m.promo)b.sq[m.from]=b.stm==1?'P':'p';b.sq[m.to]=(m.flags&EP)?'.':u.captured;if(m.flags&EP)b.sq[m.to+16*b.stm]=b.stm==1?'p':'P';if(m.flags&CASTLE){int rf=m.to>m.from?m.from+3:m.from-4,rt=m.to>m.from?m.from+1:m.from-1;b.sq[rf]=b.sq[rt];b.sq[rt]='.';}b.castling=u.castling;b.ep=u.ep;b.halfmove=u.halfmove;b.fullmove=u.fullmove;}
 std::vector<Move> legalMoves(Board& b){std::vector<Move> out;for(const Move&m:pseudo(b)){Undo u=makeMove(b,m);bool ok=!inCheck(b,-b.stm);unmakeMove(b,m,u);if(ok)out.push_back(m);}return out;}
 std::string uci(const Move&m){std::string s=nameSq(m.from)+nameSq(m.to);if(m.promo)s+=m.promo;return s;}
 bool parseMove(Board& b,const std::string& s,Move& result){for(const Move&m:legalMoves(b))if(uci(m)==s){result=m;return true;}return false;}
@@ -268,22 +277,34 @@ int search(Board& b,int depth,int alpha,int beta,int ply){
 Move bestMove(Board& b,int maxDepth,int &bestScore,int &completedDepth){
     auto rootMoves=legalMoves(b);Move best=rootMoves.empty()?Move{}:rootMoves[0];bestScore=0;completedDepth=0;nodes=0;qnodes=0;
     if(rootMoves.empty())return best;
-    repetitionPath=gameHistory;repetitionPath.push_back(hashBoard(b));
+    repetitionPath=gameHistory;const auto rootHash=hashBoard(b);if(repetitionPath.empty()||repetitionPath.back()!=rootHash)repetitionPath.push_back(rootHash);
+    int previousScore=0;
     for(int depth=1;depth<=maxDepth&&!stopRequested.load(std::memory_order_relaxed);depth++){
-        int iterationBest=-INF;Move iterationMove=best;int alpha=-INF,beta=INF;
+        int window=depth>=4?35:INF;
+        int alpha=depth>=4?std::max(-INF,previousScore-window):-INF;
+        int beta=depth>=4?std::min(INF,previousScore+window):INF;
+        int iterationBest=-INF;Move iterationMove=best;
         const std::uint64_t rootKey=hashBoard(b);TTEntry &rootEntry=tt[rootKey&(TT_SIZE-1)];Move ttMove=rootEntry.key==rootKey?rootEntry.best:Move{};
-        std::stable_sort(rootMoves.begin(),rootMoves.end(),[&](const Move&a,const Move&c){return scoreMove(b,a,ttMove,0)>scoreMove(b,c,ttMove,0);});
-        for(const Move&m:rootMoves){
+        bool completed=false;
+        while(!stopRequested.load(std::memory_order_relaxed)){
+            iterationBest=-INF;iterationMove=best;
+            std::stable_sort(rootMoves.begin(),rootMoves.end(),[&](const Move&a,const Move&c){return scoreMove(b,a,ttMove,0)>scoreMove(b,c,ttMove,0);});
+            int localAlpha=alpha;
+            for(const Move&m:rootMoves){
+                if(stopRequested.load(std::memory_order_relaxed))break;
+                Undo u=makeMove(b,m);repetitionPath.push_back(hashBoard(b));int score=-search(b,depth-1,-beta,-localAlpha,1);repetitionPath.pop_back();unmakeMove(b,m,u);
+                if(stopRequested.load(std::memory_order_relaxed))break;
+                if(score>iterationBest){iterationBest=score;iterationMove=m;}if(score>localAlpha)localAlpha=score;
+                if(localAlpha>=beta)break;
+            }
             if(stopRequested.load(std::memory_order_relaxed))break;
-            Undo u=makeMove(b,m);repetitionPath.push_back(hashBoard(b));int score=-search(b,depth-1,-beta,-alpha,1);repetitionPath.pop_back();unmakeMove(b,m,u);
-            if(stopRequested.load(std::memory_order_relaxed))break;
-            if(score>iterationBest){iterationBest=score;iterationMove=m;}if(score>alpha)alpha=score;
+            if(iterationBest<=alpha&&alpha>-INF){window*=2;alpha=std::max(-INF,previousScore-window);beta=std::min(INF,previousScore+window);continue;}
+            if(iterationBest>=beta&&beta<INF){window*=2;alpha=std::max(-INF,previousScore-window);beta=std::min(INF,previousScore+window);continue;}
+            completed=true;break;
         }
-        if(stopRequested.load(std::memory_order_relaxed))break;
-        best=iterationMove;bestScore=iterationBest;completedDepth=depth;
+        if(!completed||stopRequested.load(std::memory_order_relaxed))break;
+        best=iterationMove;bestScore=iterationBest;previousScore=bestScore;completedDepth=depth;
         rootEntry.key=rootKey;rootEntry.depth=depth;rootEntry.score=toTTScore(bestScore,0);rootEntry.best=best;rootEntry.bound=EXACT;
-        auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-(searchDeadline==Clock::time_point::max()?Clock::now():searchDeadline)).count();
-        (void)elapsed;
         {std::lock_guard<std::mutex> lock(outputMutex);std::cout<<"info depth "<<depth<<" nodes "<<(nodes+qnodes)<<" score cp "<<bestScore<<" pv "<<uci(best)<<"\n"<<std::flush;}
     }
     return best;
@@ -295,12 +316,13 @@ int main(int argc,char**argv){
     initHash();
     if(argc>1&&std::string(argv[1])=="--perft"){int d=argc>2?std::stoi(argv[2]):3;Board b;if(!loadFen(b,START_FEN))return 2;std::cout<<"perft("<<d<<") = "<<perft(b,d)<<"\n";return 0;}
     if(argc>2&&std::string(argv[1])=="--perft-fen"){int d=std::stoi(argv[2]);std::string fen;for(int i=3;i<argc;i++){if(i>3)fen+=' ';fen+=argv[i];}Board b;if(!loadFen(b,fen)){std::cerr<<"Invalid FEN\n";return 2;}std::cout<<"perft("<<d<<") = "<<perft(b,d)<<"\n";return 0;}
+    if(argc>2&&std::string(argv[1])=="--divide-fen"){int d=std::stoi(argv[2]);std::string fen;for(int i=3;i<argc;i++){if(i>3)fen+=' ';fen+=argv[i];}Board b;if(!loadFen(b,fen)){std::cerr<<"Invalid FEN\n";return 2;}long long total=0;for(const Move&m:legalMoves(b)){Undo u=makeMove(b,m);long long n=perft(b,d-1);unmakeMove(b,m,u);std::cout<<uci(m)<<": "<<n<<"\n";total+=n;}std::cout<<"Total: "<<total<<"\n";return 0;}
     if(argc>1&&std::string(argv[1])=="--list-fen"){std::string fen;for(int i=2;i<argc;i++){if(i>2)fen+=' ';fen+=argv[i];}Board b;if(!loadFen(b,fen))return 2;for(const auto&m:legalMoves(b))std::cout<<uci(m)<<" ";std::cout<<"\n";return 0;}
     Board board;loadFen(board,START_FEN);std::string line;std::thread worker;
     auto stopAndJoin=[&](){stopRequested.store(true,std::memory_order_relaxed);if(worker.joinable())worker.join();searchRunning.store(false);};
     while(std::getline(std::cin,line)){
         std::istringstream in(line);std::string cmd;in>>cmd;
-        if(cmd=="uci"){std::cout<<"id name Astra Chess 0.3\nid author Astra Chess Project\nuciok\n"<<std::flush;}
+        if(cmd=="uci"){std::cout<<"id name Astra Chess 0.4\nid author Astra Chess Project\nuciok\n"<<std::flush;}
         else if(cmd=="isready"){std::cout<<"readyok\n"<<std::flush;}
         else if(cmd=="ucinewgame"){stopAndJoin();loadFen(board,START_FEN);gameHistory.clear();for(auto &e:tt)e=TTEntry{};for(auto &k:killers)for(auto &m:k)m=Move{};for(auto &side:historyHeuristic)for(auto &from:side)for(auto &v:from)v=0;stopRequested.store(false);}
         else if(cmd=="position"){
@@ -308,6 +330,7 @@ int main(int argc,char**argv){
             if(kind=="startpos")loadFen(next,START_FEN);
             else if(kind=="fen"){std::string fen,token;for(int i=0;i<6&&in>>token;i++){if(i)fen+=' ';fen+=token;}ok=loadFen(next,fen);}
             else ok=false;
+            if(ok)gameHistory.push_back(hashBoard(next));
             std::string token;while(ok&&in>>token){if(token=="moves")continue;Move m;if(!parseMove(next,token,m)){ok=false;break;}makeMove(next,m);gameHistory.push_back(hashBoard(next));}
             if(ok)board=next;
         }
