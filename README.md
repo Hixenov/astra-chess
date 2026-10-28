@@ -1,6 +1,17 @@
-# Astra Chess 0.1
+# Astra Chess 0.2
 
-A first C++17 chess engine prototype with a UCI command loop, legal move generation (0x88 mailbox), basic material/positional evaluation, negamax alpha-beta search, and a perft mode.
+An educational C++17 UCI chess engine using a 0x88 mailbox board.
+
+## Features in v0.2
+
+- Legal move generation, including castling, en passant and promotions.
+- UCI commands: `uci`, `isready`, `ucinewgame`, `position`, `go depth N`, `stop`, `quit`.
+- Negamax alpha-beta search with iterative deepening.
+- Quiescence search to reduce horizon effects around captures.
+- Deterministic Zobrist hashing and a transposition table.
+- Basic material/positional evaluation and capture/promotion ordering.
+- Perft mode for move-generation testing.
+- Fifty-move counter draw handling in search.
 
 ## Build (Arch Linux)
 
@@ -15,7 +26,8 @@ make test
 ```bash
 ./astra
 ```
-Then send UCI commands such as:
+
+Then send UCI commands:
 
 ```text
 uci
@@ -25,23 +37,27 @@ go depth 4
 quit
 ```
 
-Load a position from FEN and apply moves:
+Set up a position from FEN and apply moves:
 
 ```text
 position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5
-go depth 3
+go depth 4
 ```
 
 ## Tests
 
 ```bash
-./astra --perft 1
-./astra --perft 2
-./astra --perft 3
+./astra --perft 1  # 20
+./astra --perft 2  # 400
+./astra --perft 3  # 8902
+./astra --perft 4  # 197281
 make test
 ```
-Expected start-position perft values: 20, 400, 8902.
 
-## Current limitations
+## Known limitations
 
-This is an educational baseline, not yet a competitive engine. Search currently uses a fixed depth (default 4; maximum 8), has no time management, transposition table, repetition detection, fifty-move draw handling, or robust UCI option support. The UCI `stop` command is currently a no-op. The reported `score cp` is the static evaluation of the root position, not the searched score. These are explicit next milestones.
+- Search is synchronous; `stop` cannot interrupt an active search yet.
+- `go` supports depth limits only, not clocks or node limits.
+- The Hash UCI option and configurable TT sizing are not implemented yet.
+- Repetition detection and complete draw adjudication are not implemented.
+- Evaluation is intentionally basic; this is a learning engine, not a Stockfish-strength engine.
