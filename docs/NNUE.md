@@ -1,7 +1,7 @@
 # NNUE in Astra Chess
 
-Astra Chess 0.5 contains the **inference side** of an NNUE evaluation (architecture, file format,
-incremental updates, tests). **No trained network is bundled**, so by default the engine uses the
+Astra Chess contains a complete NNUE toolchain: inference (architecture, file format, incremental updates),
+data generation and a built-in trainer. **No trained network is bundled**, so by default the engine uses the
 classical evaluation. A network that has not been trained plays nonsense; `--gen-test-net` only
 produces random weights for plumbing tests.
 
@@ -40,17 +40,38 @@ setoption name UseNNUE value true
 
 If `UseNNUE` is on but no valid network is loaded, the engine says so and falls back to the classical evaluation.
 
-## Getting a *trained* network (the missing piece)
+## Training a network (built in, no Python needed)
 
-1. **Generate data**: self-play games with the classical eval at fixed depth/nodes, recording
-   (FEN, search score, game result) tuples. (A `datagen` command is the natural next step; not in 0.5.)
-2. **Train** with a PS768 trainer (for example, a small PyTorch script or an existing trainer such as
-   `bullet`) using a blend of search score and game result as target. Quantise: feature weights/biases x `QA`,
-   output weights x `QB`, output bias x `QA*QB`.
-3. **Export** to the `ASTN` layout above and test with `--selftest` and a match against the classical eval:
-   `python3 tools/match.py ./astra ./astra --opt1 UseNNUE=true --opt1 EvalFile=net.nnue --games 400`.
+Astra Chess contains a dependency-free trainer for exactly this architecture.
 
-Do not ship someone else's network unless its licence allows it; train your own or check the licence first.
+```bash
+# 1. Generate self-play data: "FEN;result;score" lines (quiet positions, search score + game result)
+./astra --datagen 24000 5 1 data1.txt        # games depth seed outfile (run several seeds in parallel
+./astra --datagen 24000 5 2 data2.txt        #  processes/machines, then: cat data*.txt > data.txt)
+
+# 2. Train: data out.nnue [hidden=64] [epochs=40] [lambda=0.5] [threads=auto] [lr=0.004]
+./astra --train-nnue data.txt net.nnue 64 40 0.7
+
+# 3. Use it
+#    setoption name EvalFile value net.nnue
+#    setoption name UseNNUE value true
+```
+
+`lambda` blends the target: 1.0 = imitate the search score only, 0.0 = game result only.
+The trainer prints the validation error against game results next to the **classical evaluation's error on
+the same positions** - a net is only worth using if it beats that number.
+After training it re-loads the quantised file through the engine's own inference code and reports the difference
+to the float model (typically a few centipawns), which also verifies that feature indexing matches the engine.
+
+### Lessons learned (please read)
+
+* **Validate on whole games.** Neighbouring positions of one game are near-duplicates with the same result. A
+  validation split that samples every n-th line leaks them into training and makes a net look far better than it
+  is (I measured 0.034 vs a true 0.10+). The trainer holds out the **last 5 % of the file**; do not shuffle
+  the file before training.
+* **Data volume matters.** With ~270k positions from ~3000 games and result-only labels a 64-neuron net overfits and
+  loses to the tuned classical evaluation. Use millions of positions and score-based targets.
+* Judge the final net by **games** (`tools/match.py ... --opt1 UseNNUE=true --opt1 EvalFile=net.nnue`), not only by loss.
 
 ## Planned architecture upgrades
 

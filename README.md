@@ -1,4 +1,4 @@
-# Astra Chess 0.6
+# Astra Chess 0.7
 
 A UCI chess engine in C++17, developed in the spirit of
 [Stockfish](https://github.com/official-stockfish/Stockfish), [Velvet](https://github.com/mhonert/velvet-chess)
@@ -25,7 +25,7 @@ make test       # self-test + UCI protocol tests
 ./astra --perft 5
 ```
 
-## What's in 0.6
+## What's in 0.7 / 0.6
 
 | Area | Change |
 |------|--------|
@@ -35,6 +35,7 @@ make test       # self-test + UCI protocol tests
 | **Evaluation** | Threats, knight outposts, king-zone attack weights; all ~70 weights are now parameters, **Texel-tuned** on 285k self-play positions |
 | **Search** | TT in quiescence, countermove + continuation history, internal iterative reduction, history-adjusted LMR |
 | **GUI support** | `MultiPV` (sorted lines), `Move Overhead`, CRLF-safe input, serialised output, `go mate`, release binaries via CI |
+| **NNUE training** (0.7) | Built-in dependency-free trainer `--train-nnue` (sparse inputs, Adam, multithreaded, quantised export, engine cross-check); `--datagen` now records search scores |
 | **Tools** | `tools/match.py` (matches, Elo CI, LOS, SPRT), `--datagen` (self-play data), `--tune` (Texel tuner) |
 
 ## Measured results (all against earlier Astra versions, 40 ms/move, single core)
@@ -70,10 +71,10 @@ python3 tools/match.py ./astra ./astra-old --games 1000 --movetime 100 --concurr
 * SEE does not exclude absolutely pinned recapturers; promotions/en passant count as neutral.
 * Some tuned weights are odd (e.g. a negative 2nd-rank passed-pawn middlegame bonus); they fit the data but are
   unproven in long games.
-* The NNUE network is not trained yet. Absolute strength is unmeasured.
+* No trained NNUE network is bundled: a first net (H=64, 1.5M positions) predicts game results better than the classical evaluation on held-out games (error 0.098 vs 0.105) but won the match only by an unconfirmed margin (132 games, +59 =22 -51, 95% CI about -33..+76 Elo). Absolute strength is unmeasured.
 
 ## Roadmap
 
-1. Train a first NNUE net from self-play data (pipeline in `docs/NNUE.md`; needs a trainer - none bundled).
+1. Scale up NNUE: tens of millions of positions, larger hidden layer, then validate by games (pipeline in `docs/NNUE.md`; a first net trained on 1.5M positions is not yet proven stronger than the classical evaluation).
 2. SPSA tuning of search constants; longer-time-control validation on a multi-core machine.
 3. Gauntlet against rated engines to get an Elo anchor; Lazy-SMP, Syzygy, king-bucketed NNUE features.

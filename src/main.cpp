@@ -7,6 +7,7 @@
 #include "movegen.h"
 #include "position.h"
 #include "tests.h"
+#include "train.h"
 #include "tune.h"
 #include "uci.h"
 #include "version.h"
@@ -53,6 +54,15 @@ int main(int argc, char** argv) {
     if (a1 == "--datagen") {
         if (argc < 6) { std::cerr << "usage: astra --datagen <games> <depth> <seed> <outfile>\n"; return 2; }
         return runDatagen(std::stoi(argv[2]), std::stoi(argv[3]), std::stoull(argv[4]), argv[5]);
+    }
+    if (a1 == "--train-nnue") {
+        if (argc < 4) {
+            std::cerr << "usage: astra --train-nnue <data> <out.nnue> [hidden=64] [epochs=40] [lambda=0.5] [threads=auto] [lr=0.004]\n";
+            return 2;
+        }
+        return runTrain(argv[2], argv[3], argc > 4 ? std::stoi(argv[4]) : 64, argc > 5 ? std::stoi(argv[5]) : 40,
+                        argc > 6 ? std::stod(argv[6]) : 0.5, argc > 7 ? std::stoi(argv[7]) : 0,
+                        argc > 8 ? std::stod(argv[8]) : 0.004);
     }
     if (a1 == "--tune") {
         if (argc < 3) { std::cerr << "usage: astra --tune <datafile> [iterations=30] [paramfile=tuned_params.txt]\n"; return 2; }
