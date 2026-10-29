@@ -5,10 +5,12 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "movegen.h"
 #include "position.h"
+#include "tt.h"
 
 namespace astra {
 
@@ -32,8 +34,11 @@ struct SearchResult {
 
 class Searcher {
 public:
-    Searcher();
+    Searcher();  // owns its transposition table and may own helper threads (see setThreads)
+    Searcher(TranspositionTable* sharedTt, std::atomic<bool>* sharedStop);  // helper worker
     void setHashMb(std::size_t mb);
+    void setThreads(int n);  // Lazy SMP: n-1 helper threads share the transposition table
+    int threads() const { return threads_; }
     void clear();  // new game: clears TT, history, killers
     void stop() { stop_.store(true, std::memory_order_relaxed); }
 
@@ -41,31 +46,31 @@ public:
     SearchResult think(Position& pos, const Limits& limits, bool printInfo = true);
 
 private:
-    enum Bound : std::uint8_t { BOUND_NONE, BOUND_UPPER, BOUND_LOWER, BOUND_EXACT };
-    struct TTEntry {
-        Key key = 0;
-        std::int16_t score = 0;
-        std::int16_t eval = 0;
-        Move move = MOVE_NONE;
-        std::int8_t depth = 0;
-        std::uint8_t bound = BOUND_NONE;
-    };
-
     int search(Position& pos, int depth, int alpha, int beta, int ply, bool allowNull);
     int qsearch(Position& pos, int alpha, int beta, int ply);
     void checkLimits();
     int scoreMove(const Position& pos, Move m, Move ttMove, int ply) const;
+    void updateCaptureStats(const Position& pos, Move bestCapture, const Move* caps, int nCaps, int depth);
     void updateQuietStats(const Position& pos, Move best, const Move* quiets, int nQuiets, int depth, int ply);
     struct PvLine { int score = 0; int len = 0; Move moves[MAX_PLY + 1]; };
     void printInfo(int depth, int multipvIdx, bool multi, const PvLine& line, long long elapsedMs) const;
 
-    TTEntry* probe(Key key);
-    int hashfull() const;
+    void init();
+    void clearLocal();
+    void helperThink(Position pos, int id, int maxDepth);
+    std::uint64_t totalNodes() const;
+    bool stopped() const { return stopFlag_->load(std::memory_order_relaxed); }
+    void requestStop() { stopFlag_->store(true, std::memory_order_relaxed); }
+    int hashfull() const { return tt_->hashfull(); }
 
-    std::vector<TTEntry> tt_;
-    std::size_t ttMask_ = 0;
+    std::unique_ptr<TranspositionTable> ownTt_;
+    TranspositionTable* tt_ = nullptr;
+    std::vector<std::unique_ptr<Searcher>> helpers_;
+    int threads_ = 1;
 
     std::atomic<bool> stop_{false};
+    std::atomic<bool>* stopFlag_ = &stop_;
+    std::atomic<std::uint64_t> publishedNodes_{0};
     std::uint64_t nodes_ = 0;
     int rootDepth_ = 0;
     int selDepth_ = 0;
@@ -83,6 +88,8 @@ private:
     Move killers_[MAX_PLY + 2][2];
     int history_[2][64][64];
     Move counter_[64][64];
+    int capHist_[12][64][6];       // [moving piece][to][captured type]
+    Move excludedMove_[MAX_PLY + 2];  // move excluded at this ply (singular extension search)
     std::vector<std::int16_t> contHist_;  // [prevPiece][prevTo][piece][to]
     static int contIndex(Piece pp, Square pt, Piece p, Square t) { return ((int(pp) * 64 + pt) * 12 + int(p)) * 64 + t; }
     int evalStack_[MAX_PLY + 2];

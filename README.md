@@ -1,4 +1,4 @@
-# Astra Chess 0.7
+# Astra Chess 0.8
 
 A UCI chess engine in C++17, developed in the spirit of
 [Stockfish](https://github.com/official-stockfish/Stockfish), [Velvet](https://github.com/mhonert/velvet-chess)
@@ -10,7 +10,7 @@ and [Winter](https://github.com/rosenthj/Winter). Licensed under **GPL-3.0-or-la
 
 Astra Chess speaks standard UCI. Build it (`make`) or download a binary from the GitHub *Releases* page
 (built by CI for Linux, Windows and macOS), then add it as a **local UCI engine** in your GUI.
-Supports `MultiPV` analysis, `Hash`, `Move Overhead`. Details: [`docs/GUI.md`](docs/GUI.md).
+Supports `Threads` (multi-core search), `MultiPV` analysis, `Hash`, `Move Overhead`. Details: [`docs/GUI.md`](docs/GUI.md).
 
 > I tested the protocol with scripted sessions (including Windows CRLF line endings, MultiPV, `stop` while
 > thinking, `isready` during a search). It has not been run inside every GUI.
@@ -25,7 +25,7 @@ make test       # self-test + UCI protocol tests
 ./astra --perft 5
 ```
 
-## What's in 0.7 / 0.6
+## What's in 0.8 / 0.7 / 0.6
 
 | Area | Change |
 |------|--------|
@@ -35,6 +35,9 @@ make test       # self-test + UCI protocol tests
 | **Evaluation** | Threats, knight outposts, king-zone attack weights; all ~70 weights are now parameters, **Texel-tuned** on 285k self-play positions |
 | **Search** | TT in quiescence, countermove + continuation history, internal iterative reduction, history-adjusted LMR |
 | **GUI support** | `MultiPV` (sorted lines), `Move Overhead`, CRLF-safe input, serialised output, `go mate`, release binaries via CI |
+| **Multi-core search** (0.8) | Lazy SMP: `Threads` option (1-64), lock-free shared transposition table, helper threads with diversified depths. Verified race-free with ThreadSanitizer; the strength gain from extra threads is **not measured here** (the dev sandbox has one core) |
+| **Search** (0.8) | Singular extensions, capture-history move ordering |
+| **NNUE pipeline** (0.8) | `tools/make_net.py`: parallel data generation -> training -> validation match in one command |
 | **NNUE training** (0.7) | Built-in dependency-free trainer `--train-nnue` (sparse inputs, Adam, multithreaded, quantised export, engine cross-check); `--datagen` now records search scores |
 | **Tools** | `tools/match.py` (matches, Elo CI, LOS, SPRT), `--datagen` (self-play data), `--tune` (Texel tuner) |
 
@@ -45,10 +48,23 @@ make test       # self-test + UCI protocol tests
 | 0.5 vs 0.4 | 100 | +100 =0 -0 | shut-out, Elo not estimable |
 | Eval terms (threats/outposts/king safety) vs 0.5 | 325 | +125 =115 -85 | about +43 Elo, 95% CI +13..+74 |
 | Search additions (TT in qsearch, countermove, cont. history, IIR) | 117 | +34 =51 -32 | indistinguishable from 0 |
+| 0.8 candidate (singular extensions + capture history) vs 0.7, single thread | 249 | +86 =97 -66 | about +28 Elo, 95% CI -6..+62 (**not confirmed**; singular extensions mainly help at deeper searches than 40 ms allows) |
 | Texel-tuned weights vs untuned | 194 | +88 =41 -65 | about +41 Elo, 95% CI -2..+86, LOS ~97% (**not yet statistically confirmed**) |
 
 Self-play against a close relative overstates real gains, short time controls favour different ideas than long
 ones, and nothing here anchors the engine to a rated scale. Reproduce / extend with `tools/match.py`.
+
+## Using several cores
+
+Set `Threads` to the number of physical cores (e.g. 6-8) in your GUI, and `Hash` to 256-1024 MB for long games.
+To measure the benefit on your machine: `python tools/match.py ./astra ./astra --opt1 Threads=4 --opt2 Threads=1 --games 200 --movetime 100` (concurrency 1, so the engines do not fight for cores).
+
+## Building a better NNUE network (recommended next step for more strength)
+
+```bash
+python tools/make_net.py ./astra.exe --procs 6 --games-per-proc 9000 --depth 6 --hidden 128 --epochs 40 --match 200
+```
+Runs in about an hour on 8 cores, produces `nnue_work/net.nnue`, and plays net-vs-classical. Use the net only if it wins.
 
 ## Reproducing the tuning
 
@@ -67,7 +83,7 @@ python3 tools/match.py ./astra ./astra-old --games 1000 --movetime 100 --concurr
 
 ## Known limitations
 
-* Standard chess only (no Chess960), single search thread, no Syzygy, no pondering, no `searchmoves`.
+* Standard chess only (no Chess960), no Syzygy, no pondering, no `searchmoves`.
 * SEE does not exclude absolutely pinned recapturers; promotions/en passant count as neutral.
 * Some tuned weights are odd (e.g. a negative 2nd-rank passed-pawn middlegame bonus); they fit the data but are
   unproven in long games.

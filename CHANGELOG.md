@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8
+Lazy SMP (`Threads` option) with a lock-free shared transposition table, singular extensions, capture history,
+`tools/make_net.py` (one-command NNUE pipeline), SMP tests in the UCI suite.
+
 ## 0.7
 Built-in NNUE trainer (`--train-nnue`), self-play data now includes search scores, NNUE docs with training lessons
 (validation must hold out whole games), trainer smoke test in the UCI test suite.

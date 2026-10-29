@@ -19,10 +19,11 @@ should cover GUI/process latency; raise it if you see time losses.
 |--------|---------|---------|
 | `Hash` | 64 | Transposition table size in MB (1-4096) |
 | `Clear Hash` | - | Button: clear the hash table |
+| `Threads` | 1 | Search threads (Lazy SMP, 1-64). Set to your physical core count; not combined with `MultiPV` > 1 |
 | `MultiPV` | 1 | Number of principal variations reported (1-256) |
 | `Move Overhead` | 10 | Milliseconds reserved per move for GUI/communication latency |
 | `UseNNUE` | false | Use a loaded NNUE network (see `NNUE.md`) |
 | `EvalFile` | empty | Path of an `ASTN` network file |
 | `UCI_AnalyseMode` | false | Accepted for GUI compatibility; no behaviour change |
 
-Not supported: Chess960, pondering, `searchmoves`, multi-threaded search (one search thread).
+Not supported: Chess960, pondering, `searchmoves`.
