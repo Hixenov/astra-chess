@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: make -j2
-      - name: Self-test (perft, SEE, hashing, NNUE incremental updates, search)
+      - name: Self-test (perft, SEE, hashing, NNUE incremental updates, TT, search)
         run: ./astra --selftest
       - name: UCI protocol tests
         run: ./tests/uci_test.sh

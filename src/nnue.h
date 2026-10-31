@@ -19,7 +19,7 @@
 //   i16 featureWeights[768][hidden]; i16 featureBias[hidden];
 //   i16 outputWeights[2*hidden]; i32 outputBias;
 //
-// NOTE: no *trained* network ships with Astra Chess 0.5. This module provides the
+// NOTE: no *trained* network ships with Astra Chess. This module provides the
 // inference code, file format, incremental update machinery and tests so that a trained
 // net can be dropped in (see docs/NNUE.md).
 #pragma once

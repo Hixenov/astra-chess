@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9
+Search/infrastructure release. No absolute strength is claimed (see README).
+* Transposition table: 2-way buckets with 6-bit ageing and depth/age-based replacement (stale entries from earlier
+  searches no longer block fresh ones); `newSearch()` per move; `hashfull` counts current-age entries.
+* Pawn-structure correction history: the search learns the systematic error of the static evaluation per pawn
+  structure and applies it to pruning decisions (raw evaluation is what is stored in the TT).
+* Time management: soft limit scaled by best-move stability and score drops between iterations.
+* Self-tests: new TT test (bucketing, eviction, ageing), Scholar's-mate search test; UCI suite updated to 0.9.
+
+## 0.8
+Lazy SMP (`Threads` option) with a lock-free shared transposition table, singular extensions, capture history,
+`tools/make_net.py` (one-command NNUE pipeline), SMP tests in the UCI suite.
+
+## 0.7
+Built-in NNUE trainer (`--train-nnue`), self-play data now includes search scores, NNUE docs with training lessons
+(validation must hold out whole games), trainer smoke test in the UCI test suite.
+
 ## 0.6
 GUI compatibility (MultiPV, Move Overhead, CRLF-safe UCI, serialised output, release binaries in CI), GPL-3.0-or-later
 licence, new evaluation terms (threats, outposts, king safety), Texel-tuned weights, TT in quiescence, countermove and

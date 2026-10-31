@@ -8,10 +8,12 @@ src/position.*    Position: bitboards + mailbox, incremental Zobrist, make/unmak
 src/movegen.*     pseudo-legal generation (all / captures+promotions), legal filter, perft
 src/nnue.*        NNUE network, file loader, accumulator add/sub/refresh, inference
 src/eval.*        tapered hand-crafted eval; switches to NNUE when a network is attached
+src/tt.h          lock-free 2-way bucketed transposition table with ageing (0.9)
 src/search.*      iterative deepening, aspiration windows, PVS, TT, null move, LMR, RFP,
-                  futility/LMP, SEE pruning, quiescence with SEE filter, killers + history
+                  futility/LMP, SEE pruning, quiescence with SEE filter, killers + history,
+                  singular extensions, pawn-structure correction history (0.9)
 src/uci.*         UCI protocol, search thread, `status` helper for tools/match.py
-src/tests.*       --selftest (perft, SEE, hashing, legality cross-check, NNUE) and --bench
+src/tests.*       --selftest (perft, SEE, hashing, legality cross-check, NNUE, TT) and --bench
 tools/match.py    automatic matches, Elo +- CI, LOS, SPRT
 ```
 
@@ -37,3 +39,16 @@ Uses in search:
 * move ordering: captures with SEE >= 0 are tried first; losing captures sort below killers/history
 * quiescence: captures with SEE < 0 are skipped (unless in check)
 * main search: low-depth pruning of moves whose SEE is below `-45*depth` (quiets) / `-90*depth` (captures)
+
+## Transposition table (0.9)
+
+Slots are two 64-bit words (`data`, `check = key ^ data`). Two slots form a bucket. `data` carries
+score, static eval, move, depth, 2 bound bits and a 6-bit age. A probe checks both slots; a store updates the
+matching slot (depth-preferred inside the same search) or replaces the slot with the lowest
+`depth - 4 * age_difference`.
+
+## Correction history (0.9)
+
+`corrHist_[stm][pawnKey >> 50]` stores a running average of `searchScore - rawStaticEval` (in 1/256 cp, clamped to
++-48 cp). `staticEval = rawEval + correction`. Updated at the end of a node only when the best move is quiet, the
+node is not in check, the score is not a mate score and the bound agrees with the sign of the error.

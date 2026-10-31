@@ -60,6 +60,7 @@ private:
         say("id author Astra Chess Project");
         say("option name Hash type spin default 64 min 1 max 4096");
         say("option name Clear Hash type button");
+        say("option name Threads type spin default 1 min 1 max 64");
         say("option name MultiPV type spin default 1 min 1 max 256");
         say("option name Move Overhead type spin default 10 min 0 max 5000");
         say("option name UCI_AnalyseMode type check default false");
@@ -77,6 +78,8 @@ private:
         while (!value.empty() && value.front() == ' ') value.erase(value.begin());
         if (name == "Hash") {
             try { searcher_.setHashMb(std::size_t(std::max(1, std::min(4096, std::stoi(value))))); } catch (...) {}
+        } else if (name == "Threads") {
+            try { searcher_.setThreads(std::stoi(value)); } catch (...) {}
         } else if (name == "MultiPV") {
             try { multiPv_ = std::max(1, std::min(256, std::stoi(value))); } catch (...) {}
         } else if (name == "Move Overhead") {

@@ -9,7 +9,7 @@ MOVE_RE='^bestmove [a-h][1-8][a-h][1-8][qrbn]?$'
 
 # 1. Handshake, options, fixed-depth search
 (printf 'uci\nisready\nposition startpos\ngo depth 6\n'; sleep 0.5; printf 'quit\n') | $BIN > "$TMP/a.txt"
-grep -q '^id name Astra Chess 0.6$' "$TMP/a.txt"
+grep -q '^id name Astra Chess 0.9$' "$TMP/a.txt"
 grep -q '^option name Hash type spin' "$TMP/a.txt"
 grep -q '^option name UseNNUE type check' "$TMP/a.txt"
 grep -q '^option name MultiPV type spin' "$TMP/a.txt"
@@ -85,7 +85,28 @@ grep -Eq "$MOVE_RE" "$TMP/l.txt"
 grep -q '^readyok$' "$TMP/m.txt"
 [ "$(grep -c '^bestmove' "$TMP/m.txt")" -eq 1 ]
 
-# 13. Deterministic node count for a fixed-depth bench (regression signature)
+# 13. Data generation -> NNUE training -> load -> search (tiny, plumbing only)
+$BIN --datagen 40 3 5 "$TMP/data.txt" > /dev/null
+[ "$(wc -l < "$TMP/data.txt")" -ge 1000 ]
+$BIN --train-nnue "$TMP/data.txt" "$TMP/trained.nnue" 8 2 0.8 1 > "$TMP/train.log"
+grep -q 'quantisation check' "$TMP/train.log"
+(printf "setoption name EvalFile value $TMP/trained.nnue\nsetoption name UseNNUE value true\nposition startpos\ngo depth 4\n"; sleep 0.4; printf 'quit\n') | $BIN > "$TMP/n.txt"
+grep -q 'NNUE network loaded' "$TMP/n.txt"
+grep -Eq "$MOVE_RE" "$TMP/n.txt"
+
+# 14. Lazy SMP: Threads option, search, stop, changing thread count, MultiPV fallback
+grep -q '^option name Threads type spin' "$TMP/a.txt"
+(printf 'setoption name Threads value 4\nposition startpos\ngo depth 8\n'; sleep 1.5; printf 'setoption name Threads value 2\nposition startpos moves e2e4\ngo movetime 200\n'; sleep 0.6; printf 'quit\n') | $BIN > "$TMP/o.txt"
+[ "$(grep -c '^bestmove' "$TMP/o.txt")" -eq 2 ]
+grep -q 'info depth 8 ' "$TMP/o.txt"
+(printf 'setoption name Threads value 4\nposition startpos\ngo infinite\n'; sleep 0.4; printf 'stop\n'; sleep 0.3; printf 'quit\n') | $BIN > "$TMP/p.txt"
+[ "$(grep -c '^bestmove' "$TMP/p.txt")" -eq 1 ]
+(printf 'setoption name Threads value 4\nsetoption name MultiPV value 2\nposition startpos\ngo depth 6\n'; sleep 0.6; printf 'quit\n') | $BIN > "$TMP/q.txt"
+grep -q 'multipv 2 ' "$TMP/q.txt"
+# node counter must never go backwards between depths
+(printf 'setoption name Threads value 4\nposition startpos\ngo depth 9\n'; sleep 1.2; printf 'quit\n') | $BIN | grep -o 'nodes [0-9]*' | awk '{if($2<prev){exit 1}; prev=$2}'
+
+# 15. Deterministic node count for a fixed-depth bench (regression signature)
 $BIN --bench 6 | tail -1 | grep -q ' nodes '
 
-printf 'All Astra Chess 0.6 UCI tests passed.\n'
+printf 'All Astra Chess 0.9 UCI tests passed.\n'

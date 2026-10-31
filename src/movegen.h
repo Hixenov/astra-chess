@@ -19,7 +19,7 @@ enum GenType { GEN_ALL, GEN_CAPTURES };  // GEN_CAPTURES: captures, en passant, 
 void generate(const Position& pos, MoveList& ml, GenType gt);
 
 // Fills `ml` with strictly legal moves; returns the count.
-int generateLegal(const Position& pos, MoveList& ml);
+int generateLegal(const Position& pos, MoveList& out);
 
 std::uint64_t perft(Position& pos, int depth);
 

@@ -13,6 +13,7 @@
 #include "movegen.h"
 #include "position.h"
 #include "search.h"
+#include "tt.h"
 #include "version.h"
 
 namespace astra {
@@ -265,6 +266,46 @@ void testNnue() {
     std::filesystem::remove(path);
 }
 
+// 0.9: bucketed transposition table with ageing
+void testTt() {
+    std::cout << "[tt]     ";
+    const int failuresBefore = g_failures;
+    TranspositionTable tt;
+    tt.resize(1);
+    auto mk = [](Key k, int depth, int score, TTBound b, Move mv) {
+        TTEntry e;
+        e.key = k; e.depth = std::int8_t(depth); e.score = std::int16_t(score); e.eval = 7; e.bound = b; e.move = mv;
+        return e;
+    };
+    TTEntry out;
+    check(!tt.probe(0x1234, out), "empty table misses");
+    tt.store(mk(0x1234, 5, -42, BOUND_EXACT, makeMove(12, 28, F_DOUBLE_PUSH)));
+    check(tt.probe(0x1234, out) && out.score == -42 && out.depth == 5 && out.bound == BOUND_EXACT &&
+          out.move == makeMove(12, 28, F_DOUBLE_PUSH) && out.eval == 7, "store/probe round trip");
+    // two keys that share a bucket must coexist
+    const Key a = 0x100, b = 0x100 + (Key(1) << 40);  // identical low bits -> same bucket
+    tt.store(mk(a, 3, 1, BOUND_LOWER, 0));
+    tt.store(mk(b, 4, 2, BOUND_UPPER, 0));
+    check(tt.probe(a, out) && out.score == 1, "bucket keeps first entry");
+    check(tt.probe(b, out) && out.score == 2, "bucket keeps second entry");
+    // a third key in the same bucket evicts the shallower one, not the deeper one
+    const Key c = 0x100 + (Key(2) << 40);
+    tt.store(mk(c, 9, 3, BOUND_EXACT, 0));
+    check(tt.probe(c, out) && out.score == 3, "third entry stored");
+    check(tt.probe(b, out), "deeper entry survives eviction");
+    check(!tt.probe(a, out), "shallowest entry evicted");
+    // a shallow update of the same key in the same search must not overwrite a much deeper entry
+    tt.store(mk(c, 2, 99, BOUND_LOWER, 0));
+    check(tt.probe(c, out) && out.score == 3, "shallow update does not replace deep entry");
+    // after newSearch() stale entries are replaceable by anything
+    for (int i = 0; i < 3; ++i) tt.newSearch();
+    tt.store(mk(a, 1, 5, BOUND_EXACT, 0));
+    check(tt.probe(a, out) && out.score == 5, "fresh entry replaces stale one");
+    tt.clear();
+    check(!tt.probe(a, out), "clear empties the table");
+    std::cout << (g_failures != failuresBefore ? "FAILED" : "ok") << "\n";
+}
+
 void testSearch() {
     std::cout << "[search] ";
     const int failuresBefore = g_failures;
@@ -300,6 +341,14 @@ void testSearch() {
         s.think(p, lim, false);
         check(p.fen() == f && p.key() == p.computeKey(), "search restores position");
     }
+    {
+        // Tactical sanity: free queen must be taken (Nxe4 style) and a mate-in-2 must be found
+        Position p;
+        p.setFen("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");  // Scholar's-mate pattern: Qxf7#
+        lim.depth = 4;
+        const SearchResult r = s.think(p, lim, false);
+        check(moveToUci(r.best) == "h5f7", "finds Qxf7# (got " + moveToUci(r.best) + ")");
+    }
     std::cout << (g_failures != failuresBefore ? "FAILED" : "ok") << "\n";
 }
 
@@ -315,6 +364,7 @@ int runSelfTest() {
     testRepetition();
     testPlayouts();
     testNnue();
+    testTt();
     testSearch();
     if (g_failures) { std::cout << "\n" << g_failures << " check(s) FAILED\n"; return 1; }
     std::cout << "\nAll self-tests passed.\n";

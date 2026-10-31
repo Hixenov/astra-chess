@@ -53,6 +53,10 @@ public:
     int nonPawnPieces(Color c) const {
         return popcount(byColor_[c] & ~byType_[PAWN] & ~byType_[KING]);
     }
+    // Cheap hash of the pawn structure (both colours), used to index correction history.
+    Key pawnKey() const {
+        return (pieces(WHITE, PAWN) * 0x9E3779B97F4A7C15ULL) ^ (pieces(BLACK, PAWN) * 0xC2B2AE3D27D4EB4FULL + 0x165667B19E3779F9ULL);
+    }
 
     Bitboard attackersTo(Square s, Bitboard occ) const;
     bool attackedBy(Square s, Color by, Bitboard occ) const {

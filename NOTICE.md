@@ -10,7 +10,8 @@ Astra Chess is an independent implementation, but its techniques are standard co
 several are modelled on the engines that inspired the project:
 
 * **Stockfish** (GPL-3.0): the swap-based static exchange evaluation, the magic-bitboard initialisation
-  scheme (random sparse magics with the per-rank seeds used there) and general search/ordering ideas.
+  scheme (random sparse magics with the per-rank seeds used there), the lockless transposition-table scheme,
+  the idea of correction history, and general search/ordering ideas.
 * **Velvet** and **Winter** (GPL-3.0): inspiration for NNUE layout and project structure.
 * The Chess Programming Wiki, for bitboard, magic bitboard, SEE and Texel-tuning descriptions.
 

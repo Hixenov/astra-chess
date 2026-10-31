@@ -56,7 +56,7 @@ int runDatagen(int games, int depth, std::uint64_t seed, const std::string& outF
             if (r.best == MOVE_NONE || std::abs(r.score) > 300) { --g; continue; }  // unbalanced opening: redo
         }
 
-        std::vector<std::string> fens;
+        std::vector<std::pair<std::string, int>> fens;  // FEN + search score (White's view, cp)
         double result = 0.5;
         int streak = 0, streakSign = 0, flat = 0;
         bool decided = false;
@@ -68,7 +68,7 @@ int runDatagen(int games, int depth, std::uint64_t seed, const std::string& outF
             const SearchResult r = searcher.think(pos, lim, false);
             const int white = pos.sideToMove() == WHITE ? r.score : -r.score;
             if (!pos.inCheck() && !isTactical(r.best) && std::abs(r.score) < 2000)
-                fens.push_back(pos.fen());
+                fens.push_back({pos.fen(), white});
             // Adjudication
             const int sign = white >= 1000 ? 1 : (white <= -1000 ? -1 : 0);
             streak = (sign != 0 && sign == streakSign) ? streak + 1 : (sign != 0 ? 1 : 0);
@@ -78,7 +78,7 @@ int runDatagen(int games, int depth, std::uint64_t seed, const std::string& outF
             if (flat >= 24 && ply > 80) { result = 0.5; decided = true; break; }
             pos.makeMove(r.best);
         }
-        for (const std::string& f : fens) { out << f << ';' << result << '\n'; ++positions; }
+        for (const auto& f : fens) { out << f.first << ';' << result << ';' << f.second << '\n'; ++positions; }
         ++finished;
         if (finished % 50 == 0) { out.flush(); std::cout << "  " << finished << " games, " << positions << " positions" << std::endl; }
     }
